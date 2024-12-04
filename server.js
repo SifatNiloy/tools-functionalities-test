@@ -54,32 +54,40 @@ app.post("/transcribe", upload.single("audioFile"), async (req, res) => {
   }
 
   const audioPath = req.file.path;
+  const originalSize = fs.statSync(audioPath).size;
 
-  // If the file is a video, extract audio from it
+  console.log(`Original file size: ${originalSize} bytes`);
+
+  // If the file is a video, extract and compress the audio from it
   const isVideo = req.file.mimetype.startsWith("video");
 
   if (isVideo) {
     try {
-      // Create a path for the extracted audio file
-      const audioFilePath = `uploads/${Date.now()}-audio.mp3`;
+      // Create a path for the extracted and compressed audio file
+      const audioFilePath = `uploads/${Date.now()}-audio-compressed.mp3`;
 
-      // Extract audio from the video using FFmpeg
+      // Extract and compress the audio from the video using FFmpeg
       await new Promise((resolve, reject) => {
         ffmpeg(audioPath)
           .output(audioFilePath)
+          .noVideo() // No video, only audio
           .audioCodec("libmp3lame")
-          .audioBitrate(128)
+          .audioBitrate(64) // Lower bitrate for audio compression
           .on("end", () => resolve())
           .on("error", (err) => reject(err))
           .run();
       });
 
-      console.log("Audio extracted:", audioFilePath);
+      console.log("Audio extracted and compressed:", audioFilePath);
 
       // Delete the original video file after extracting audio
       fs.unlinkSync(audioPath);
 
-      // Now send the extracted audio file to OpenAI Whisper API
+      // Log the size of the compressed audio file
+      const compressedSize = fs.statSync(audioFilePath).size;
+      console.log(`Compressed audio file size: ${compressedSize} bytes`);
+
+      // Now send the compressed audio file to OpenAI Whisper API
       const response = await openai.audio.transcriptions.create({
         file: fs.createReadStream(audioFilePath),
         model: "whisper-1", // Whisper model
@@ -87,7 +95,7 @@ app.post("/transcribe", upload.single("audioFile"), async (req, res) => {
         response_format: "text",
       });
 
-      // Delete the extracted audio file after transcription
+      // Delete the extracted and compressed audio file after transcription
       fs.unlinkSync(audioFilePath);
 
       // Send transcription as response
@@ -97,17 +105,38 @@ app.post("/transcribe", upload.single("audioFile"), async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   } else {
-    // If the file is already audio, just transcribe it
+    // If the file is already audio, compress it and transcribe
     try {
+      const compressedAudioPath = `uploads/${Date.now()}-audio-compressed.mp3`;
+
+      // Compress audio file using FFmpeg
+      await new Promise((resolve, reject) => {
+        ffmpeg(audioPath)
+          .output(compressedAudioPath)
+          .audioCodec("libmp3lame")
+          .audioBitrate(64) // Lower bitrate for audio compression
+          .on("end", () => resolve())
+          .on("error", (err) => reject(err))
+          .run();
+      });
+
+      // Log the size of the compressed audio file
+      const compressedSize = fs.statSync(compressedAudioPath).size;
+      console.log(`Compressed audio file size: ${compressedSize} bytes`);
+
+      // Delete the original uploaded audio file
+      fs.unlinkSync(audioPath);
+
+      // Send the compressed audio file to OpenAI Whisper API
       const response = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
+        file: fs.createReadStream(compressedAudioPath),
         model: "whisper-1",
         language: "en",
         response_format: "text",
       });
 
-      // Clean up uploaded audio file after processing
-      fs.unlinkSync(audioPath);
+      // Delete the compressed audio file after transcription
+      fs.unlinkSync(compressedAudioPath);
 
       // Send transcription as response
       res.json({ transcription: response });
