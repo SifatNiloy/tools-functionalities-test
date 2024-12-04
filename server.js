@@ -4,6 +4,9 @@ const path = require("path");
 const fs = require("fs");
 const { OpenAI } = require("openai");
 require("dotenv").config();
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+const ffmpeg = require("fluent-ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
 const port = 3000;
@@ -21,17 +24,18 @@ const upload = multer({
     },
   }),
   fileFilter: (req, file, cb) => {
-    const filetypes = /mp3|mp4|wav|m4a|flac/;
+    const filetypes = /mp4|avi|mov|mkv|flv|mp3|wav|m4a|flac/; // Support both audio and video formats
     const extname = filetypes.test(
       path.extname(file.originalname).toLowerCase()
     );
-    const mimetype = file.mimetype.startsWith("audio"); // More general audio MIME check
+    const mimetype =
+      file.mimetype.startsWith("audio") || file.mimetype.startsWith("video"); // Check for both audio and video MIME types
 
     if (extname && mimetype) {
       cb(null, true);
     } else {
       console.error("Rejected file:", file.originalname, file.mimetype);
-      cb(new Error("Only audio files are allowed!"));
+      cb(new Error("Only audio and video files are allowed!"));
     }
   },
 });
@@ -43,38 +47,74 @@ const openai = new OpenAI({
 
 // Endpoint for file upload and transcription
 app.post("/transcribe", upload.single("audioFile"), async (req, res) => {
-  console.log("File uploaded:", req.file); // Add this line to log the file details
+  console.log("File uploaded:", req.file);
 
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
   }
 
-  try {
-    const audioPath = req.file.path;
+  const audioPath = req.file.path;
 
-    // Send the file to OpenAI Whisper API
-    const response = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(audioPath), // Use file stream for Whisper API
-      model: "whisper-1", // Whisper model
-      language: "en", // Optional but helps the model
-      response_format: "text", // Response format
-    });
-    console.log("this is extracted text from the audio:", response);
-    // Check if response is empty or not
-    if (!response || !response.trim()) {
-      return res
-        .status(500)
-        .json({ error: "Transcription failed or empty response." });
+  // If the file is a video, extract audio from it
+  const isVideo = req.file.mimetype.startsWith("video");
+
+  if (isVideo) {
+    try {
+      // Create a path for the extracted audio file
+      const audioFilePath = `uploads/${Date.now()}-audio.mp3`;
+
+      // Extract audio from the video using FFmpeg
+      await new Promise((resolve, reject) => {
+        ffmpeg(audioPath)
+          .output(audioFilePath)
+          .audioCodec("libmp3lame")
+          .audioBitrate(128)
+          .on("end", () => resolve())
+          .on("error", (err) => reject(err))
+          .run();
+      });
+
+      console.log("Audio extracted:", audioFilePath);
+
+      // Delete the original video file after extracting audio
+      fs.unlinkSync(audioPath);
+
+      // Now send the extracted audio file to OpenAI Whisper API
+      const response = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioFilePath),
+        model: "whisper-1", // Whisper model
+        language: "en",
+        response_format: "text",
+      });
+
+      // Delete the extracted audio file after transcription
+      fs.unlinkSync(audioFilePath);
+
+      // Send transcription as response
+      res.json({ transcription: response });
+    } catch (error) {
+      console.error("Error:", error.message);
+      res.status(500).json({ error: error.message });
     }
+  } else {
+    // If the file is already audio, just transcribe it
+    try {
+      const response = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: "whisper-1",
+        language: "en",
+        response_format: "text",
+      });
 
-    // Clean up uploaded file after processing
-    fs.unlinkSync(audioPath);
+      // Clean up uploaded audio file after processing
+      fs.unlinkSync(audioPath);
 
-    // Send transcription as response
-    res.json({ transcription: response });
-  } catch (error) {
-    console.error("Error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
+      // Send transcription as response
+      res.json({ transcription: response });
+    } catch (error) {
+      console.error("Error:", error.message);
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
