@@ -62,6 +62,10 @@ app.post(
       const isVideo = req.file.mimetype.startsWith("video");
       const processedAudioPath = `uploads/${Date.now()}-audio-compressed.mp3`;
 
+      // Get the original file size
+      const originalSize = fs.statSync(audioPath).size;
+      console.log(`Original file size: ${originalSize} bytes`);
+
       // Process the file: extract or compress audio
       await new Promise<void>((resolve, reject) => {
         const command = ffmpeg(audioPath).output(processedAudioPath);
@@ -78,6 +82,10 @@ app.post(
           .run();
       });
 
+      // Get the compressed file size
+      const compressedSize = fs.statSync(processedAudioPath).size;
+      console.log(`Compressed file size: ${compressedSize} bytes`);
+
       // Delete the original file
       fs.unlinkSync(audioPath);
 
@@ -92,14 +100,19 @@ app.post(
       // Clean up the processed audio file
       fs.unlinkSync(processedAudioPath);
 
-      // Send the transcription as the response
-      res.json({ transcription: response });
+      // Send the transcription and file size details as the response
+      res.json({
+        transcription: response,
+        originalFileSize: `${originalSize} bytes`,
+        compressedFileSize: `${compressedSize} bytes`,
+      });
     } catch (error: any) {
       console.error("Error:", error.message);
       res.status(500).json({ error: error.message });
     }
   }
 );
+
 
 
 // Health check endpoint
