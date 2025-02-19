@@ -116,11 +116,11 @@ app.post(
 
 
 // Health check endpoint
-app.get("/", (req: Request, res: Response) => {
-  res.send("Welcome to Whisper Transcription API!");
-});
+// app.get("/", (req: Request, res: Response) => {
+//   res.send("Welcome to Whisper Transcription API!");
+// });
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+// // Start the server
+// app.listen(port, () => {
+//   console.log(`Server is running on http://localhost:${port}`);
+// });
