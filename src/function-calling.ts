@@ -146,11 +146,11 @@ app.post(
           type: 'function',
           function: {
             name: 'generate_algebra_problem',
-            description: 'Creates a algebra math problem on algebra depending on the difficulty level.',
+            description: 'Generates an algebra math problem based on difficulty level.',
             parameters: {
               type: 'object',
               properties: {
-                topic: { type: 'string', description: 'The algebra math problem depending on difficulty level.' },
+                topic: { type: 'string', description: 'The difficulty level of the problem (easy, medium, hard).' },
               },
               required: ['difficulty'],
             },
@@ -159,15 +159,15 @@ app.post(
         {
           type: 'function',
           function: {
-            name: 'generate_english_lesson(',
-            description: 'Creates a 5-day roadmap for learning the topic.',
+            name: 'generate_english_lesson',
+            description: 'Creates a roadmap for learning a topic.',
             parameters: {
               type: 'object',
               properties: {
-                skill: { type: 'string', description: 'The topic/skill to learn.' },
+                topic: { type: 'string', description: 'The topic/skill to learn.' },
                 duration: { type: 'string', description: 'Duration for the roadmap.' },
               },
-              required: ['topic'],
+              required: ['topic','duration'],
             },
           },
         },
@@ -175,12 +175,12 @@ app.post(
           type: 'function',
           function: {
             name: 'calculate_tip',
-            description: 'calculate tips.',
+            description: 'Calculates the tip amount based on the bill and tip percentage.',
             parameters: {
               type: 'object',
               properties: {
-                topic: { type: 'string', description: 'calculate the tips.' },
-                numQuestions: { type: 'number', description: 'calculate the tips depending on the bill and tip percentage.' },
+                bill: { type: 'string', description: 'The total bill amount.' },
+                tipPercentage: { type: 'number', description: 'The tip percentage to be applied.' },
               },
               required: ['bill', 'tipPercentage'],
             },
