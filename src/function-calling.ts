@@ -248,7 +248,7 @@ app.post('/api/tutor', async (req: Request, res: Response) => {
       {
         type: 'function',
         function: {
-          name: 'generate_algebra_problem',
+          name: 'generate_assignment',
           description: 'Creates an assignment on a given topic.',
           parameters: {
             type: 'object',
@@ -309,8 +309,8 @@ app.post('/api/tutor', async (req: Request, res: Response) => {
           const functionName = toolCall.function.name;
           const functionArgs = JSON.parse(toolCall.function.arguments);
 
-          if (functionName === 'generate_algebra_problem') {
-            result = await generateAlgebraProblem(functionArgs.difficulty); 
+          if (functionName === 'generate_assignment') {
+            result = await generateAssignment(functionArgs.difficulty); 
           } else if (functionName === 'generate_learning_roadmap') {
             console.log(functionArgs?.topic, functionArgs?.duration);
             result = await generateLearningRoadmap(functionArgs.topic, functionArgs.duration); 
