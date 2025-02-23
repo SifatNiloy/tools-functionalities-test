@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
+// import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -145,12 +145,27 @@ app.post(
         {
           type: 'function',
           function: {
-            name: 'generate_assignment',
-            description: 'Creates an assignment on a given topic.',
+            name: 'generate_algebra_problem',
+            description: 'Creates a algebra math problem on algebra depending on the difficulty level.',
             parameters: {
               type: 'object',
               properties: {
-                topic: { type: 'string', description: 'The topic for the assignment.' },
+                topic: { type: 'string', description: 'The algebra math problem depending on difficulty level.' },
+              },
+              required: ['difficulty'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'generate_english_lesson(',
+            description: 'Creates a 5-day roadmap for learning the topic.',
+            parameters: {
+              type: 'object',
+              properties: {
+                skill: { type: 'string', description: 'The topic/skill to learn.' },
+                duration: { type: 'string', description: 'Duration for the roadmap.' },
               },
               required: ['topic'],
             },
@@ -159,30 +174,15 @@ app.post(
         {
           type: 'function',
           function: {
-            name: 'generate_learning_roadmap',
-            description: 'Creates a 5-day roadmap for learning the topic.',
+            name: 'calculate_tip',
+            description: 'calculate tips.',
             parameters: {
               type: 'object',
               properties: {
-                skill: { type: 'string', description: 'The topic/skill to learn.' },
-                duration: { type: 'string', description: 'Duration for the roadmap.' },
+                topic: { type: 'string', description: 'calculate the tips.' },
+                numQuestions: { type: 'number', description: 'calculate the tips depending on the bill and tip percentage.' },
               },
-              required: ['skill', 'duration'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'generate_quiz_questions',
-            description: 'Generates a set of quiz questions on a given topic.',
-            parameters: {
-              type: 'object',
-              properties: {
-                topic: { type: 'string', description: 'The topic of the quiz.' },
-                numQuestions: { type: 'number', description: 'Number of questions in the quiz.' },
-              },
-              required: ['topic', 'numQuestions'],
+              required: ['bill', 'tipPercentage'],
             },
           },
         },
@@ -206,12 +206,12 @@ app.post(
           const functionName = toolCall.function.name;
           const functionArgs = JSON.parse(toolCall.function.arguments);
   
-          if (functionName === 'generate_assignment') {
-            result = generateAssignment(functionArgs.topic);
-          } else if (functionName === 'generate_learning_roadmap') {
-            result = generateLearningRoadmap(functionArgs.skill, functionArgs.duration);
-          } else if (functionName === 'generate_quiz_questions') {
-            result = generateQuizQuestions(functionArgs.topic, functionArgs.numQuestions);
+          if (functionName === 'generate_algebra_problem') {
+            result = generateAlgebraProblem(functionArgs.difficulty);
+          } else if (functionName === 'generate_english_lesson') {
+            result = generateEnglishLesson((functionArgs.skill, functionArgs.duration));
+          } else if (functionName === 'calculate_tip') {
+            result = calculateTip(functionArgs.bill, functionArgs.tipPercentage);
           }
         }
   
