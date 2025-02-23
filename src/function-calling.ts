@@ -17,8 +17,24 @@ type ChatCompletionMessageParam =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string }
-  | { role: 'function'; content: string; name: string };
+  | { role: 'function'; content: string; name: string ; tool_call_id?: string};
 
+
+type FunctionParameters = {
+  type: 'object';
+  properties: Record<string, { type: string; description: string }>;
+  required: string[];
+};
+
+
+type Tool = {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: FunctionParameters;
+  };
+};
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -86,7 +102,7 @@ function generateQuizQuestions(topic: string, numQuestions: number): string {
 //  /api/chat endpoint with function calling
 app.post(
   '/api/chat',
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  async (req: Request, res: Response) => {
     try {
       // Validating incoming request using Zod.
       const chatSchema = z.object({
@@ -125,136 +141,89 @@ app.post(
         : [{ role: 'user', content: message }];
 
       // Registering the function (tool) for OpenAI.
-      const functions = [
+      const  tools: Tool[] = [
         {
-          name: 'generate_algebra_problem',
-          description: 'Generates a new algebra problem for practice.',
-          parameters: {
-            type: 'object',
-            properties: {
-              difficulty: {
-                type: 'string',
-                description: "The difficulty level: 'easy', 'medium', or 'hard'.",
+          type: 'function',
+          function: {
+            name: 'generate_assignment',
+            description: 'Creates an assignment on a given topic.',
+            parameters: {
+              type: 'object',
+              properties: {
+                topic: { type: 'string', description: 'The topic for the assignment.' },
               },
+              required: ['topic'],
             },
-            required: ['difficulty'],
           },
         },
         {
-          name: 'generate_english_lesson',
-          description: 'Generates an English lesson based on a given topic.',
-          parameters: {
-            type: 'object',
-            properties: {
-              topic: {
-                type: 'string',
-                description: "The lesson topic (e.g., 'grammar', 'vocabulary', or 'writing').",
+          type: 'function',
+          function: {
+            name: 'generate_learning_roadmap',
+            description: 'Creates a 5-day roadmap for learning the topic.',
+            parameters: {
+              type: 'object',
+              properties: {
+                skill: { type: 'string', description: 'The topic/skill to learn.' },
+                duration: { type: 'string', description: 'Duration for the roadmap.' },
               },
+              required: ['skill', 'duration'],
             },
-            required: ['topic'],
           },
         },
         {
-          name: 'calculate_tip',
-          description: 'Calculates the tip and total bill amount based on the bill and tip percentage.',
-          parameters: {
-            type: 'object',
-            properties: {
-              bill: {
-                type: 'number',
-                description: 'The total bill amount in dollars.',
+          type: 'function',
+          function: {
+            name: 'generate_quiz_questions',
+            description: 'Generates a set of quiz questions on a given topic.',
+            parameters: {
+              type: 'object',
+              properties: {
+                topic: { type: 'string', description: 'The topic of the quiz.' },
+                numQuestions: { type: 'number', description: 'Number of questions in the quiz.' },
               },
-              tipPercentage: {
-                type: 'number',
-                description: 'The tip percentage to apply.',
-              },
+              required: ['topic', 'numQuestions'],
             },
-            required: ['bill', 'tipPercentage'],
           },
         },
       ];
 
       // Make the initial chat completion request with function calling enabled.
       const initialResponse = await openai.chat.completions.create({
-        model: 'gpt-4o', 
+        model: 'gpt-3.5-turbo', 
         messages,
-        functions,
-        function_call: 'auto',
+        tools,
+        tool_choice: 'auto',
       });
 
       // Accessing the first message from the response.
       const responseMessage = initialResponse.choices[0].message;
 
       // Checking if OpenAI wants to call one of our functions.
-      if (responseMessage?.function_call) {
-        const functionName = responseMessage.function_call.name;
-        const functionArgs = JSON.parse(responseMessage.function_call.arguments);
-
-        if (functionName === 'generate_algebra_problem') {
-          // Call our local function with the provided arguments.
-          const problem = generateAlgebraProblem(functionArgs.difficulty);
-
-          // Create a message representing the function's response.
-          const functionResponseMessage: ChatCompletionMessageParam = {
-            role: 'function',
-            name: functionName,
-            content: problem,
-          };
-
-          // Continue the conversation by sending the function response back to OpenAI.
-          const finalResponse = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [...messages, responseMessage, functionResponseMessage],
-          });
-
-          res.json({ answer: finalResponse.choices[0].message });
-          return;
+      if (responseMessage?.tool_calls) {
+        let result = '';
+        for (const toolCall of responseMessage.tool_calls) {
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+  
+          if (functionName === 'generate_assignment') {
+            result = generateAssignment(functionArgs.topic);
+          } else if (functionName === 'generate_learning_roadmap') {
+            result = generateLearningRoadmap(functionArgs.skill, functionArgs.duration);
+          } else if (functionName === 'generate_quiz_questions') {
+            result = generateQuizQuestions(functionArgs.topic, functionArgs.numQuestions);
+          }
         }
-        else if (functionName === 'generate_english_lesson') {
-          // Call the English lesson function.
-          const lesson = generateEnglishLesson(functionArgs.topic);
-          const functionResponseMessage: ChatCompletionMessageParam = {
-            role: 'function',
-            name: functionName,
-            content: lesson,
-          };
-
-          // Continue the conversation by sending the function response back to OpenAI.
-          const finalResponse = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [...messages, responseMessage, functionResponseMessage],
-          });
-
-          res.json({ answer: finalResponse.choices[0].message });
-          return;
-        }
-        else if (functionName === 'calculate_tip') {
-          // Call the tip calculator function.
-          const tipResult = calculateTip(functionArgs.bill, functionArgs.tipPercentage);
-          const functionResponseMessage: ChatCompletionMessageParam = {
-            role: 'function',
-            name: functionName,
-            content: tipResult,
-          };
-        
-          // Continue the conversation by sending the function response back to OpenAI.
-          const finalResponse = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [...messages, responseMessage, functionResponseMessage],
-          });
-        
-          res.json({ answer: finalResponse.choices[0].message });
-          return;
-        }
-        
+  
+        res.json({ answer: result });
+        return;
       } else {
         res.json({ answer: responseMessage });
         return;
       }
     } catch (error: any) {
-      console.error('Error in /api/chat:', error);
+      console.error('Error in /api/tutor:', error);
       res.status(500).json({ error: 'Something went wrong.' });
-      return;
     }
   }
 );
@@ -262,7 +231,7 @@ app.post(
 // AI Tutor API Endpoint
 app.post('/api/tutor', async (req: Request, res: Response) => {
   try {
-    console.log('Received request body:', req.body);  // ✅ Log full request
+    console.log('Received request body:', req.body);  
 
     // Validate incoming request using Zod
     const tutorSchema = z.object({
@@ -275,85 +244,106 @@ app.post('/api/tutor', async (req: Request, res: Response) => {
     const { task, topic, duration, numQuestions } = tutorSchema.parse(req.body);
 
     // Register AI Tutor functions
-    const functions = [
+    const tools: Tool[] = [
       {
-        name: 'generate_assignment',
-        description: 'Creates an assignment on a given topic.',
-        parameters: {
-          type: 'object',
-          properties: {
-            topic: { type: 'string', description: 'The topic for the assignment.' },
+        type: 'function',
+        function: {
+          name: 'generate_algebra_problem',
+          description: 'Creates an assignment on a given topic.',
+          parameters: {
+            type: 'object',
+            properties: {
+              topic: { type: 'string', description: 'The topic for the assignment.' },
+            },
+            required: ['topic'],
           },
-          required: ['topic'],
         },
       },
       {
-        name: 'generate_learning_roadmap',
-        description: 'Creates a 5 day roadmap for learning the topic.',
-        parameters: {
-          type: 'object',
-          properties: {
-            skill: { type: 'string', description: 'The topic/skill to learn.' },
-            duration: { type: 'string', description: 'duration for the roadmap.' },
+        type: 'function',
+        function: {
+          name: 'generate_learning_roadmap',
+          description: 'Creates a 5-day roadmap for learning the topic.',
+          parameters: {
+            type: 'object',
+            properties: {
+              skill: { type: 'string', description: 'The topic/skill to learn.' },
+              duration: { type: 'string', description: 'Duration for the roadmap.' },
+            },
+            required: ['skill', 'duration'],
           },
-          required: ['skill', 'duration'],
         },
       },
       {
-        name: 'generate_quiz_questions',
-        description: 'Generates a set of quiz questions on a given topic.',
-        parameters: {
-          type: 'object',
-          properties: {
-            topic: { type: 'string', description: 'The topic of the quiz.' },
-            numQuestions: { type: 'number', description: 'Number of questions in the quiz.' },
+        type: 'function',
+        function: {
+          name: 'generate_quiz_questions',
+          description: 'Generates a set of quiz questions on a given topic.',
+          parameters: {
+            type: 'object',
+            properties: {
+              topic: { type: 'string', description: 'The topic of the quiz.' },
+              numQuestions: { type: 'number', description: 'Number of questions in the quiz.' },
+            },
+            required: ['topic', 'numQuestions'],
           },
-          required: ['topic', 'numQuestions'],
         },
       },
     ];
 
     // Send the request to OpenAI with function calling enabled
     const initialResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: `I need a ${task} on ${topic}` }],
-      functions,
-      function_call: 'auto',
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: `I need a ${task} on ${topic} in ${duration} of ${numQuestions} questions` }],
+      tools,
+      tool_choice: 'auto',
     });
 
     // Extract the response message
     const responseMessage = initialResponse.choices[0].message;
+    if (responseMessage?.tool_calls) {
+      try {
+        let result = '';
+        // Process each tool call sequentially
+        for (const toolCall of responseMessage.tool_calls) {
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
 
-    if (responseMessage?.function_call) {
-      const functionName = responseMessage.function_call.name;
-      const functionArgs = JSON.parse(responseMessage.function_call.arguments);
+          if (functionName === 'generate_algebra_problem') {
+            result = await generateAlgebraProblem(functionArgs.difficulty); 
+          } else if (functionName === 'generate_learning_roadmap') {
+            console.log(functionArgs?.topic, functionArgs?.duration);
+            result = await generateLearningRoadmap(functionArgs.topic, functionArgs.duration); 
+          } else if (functionName === 'generate_quiz_questions') {
+            result = await generateQuizQuestions(functionArgs.topic, functionArgs.numQuestions); 
+          }
 
-      let result = '';
+          // Format the function response
+          const functionResponseMessage: ChatCompletionMessageParam = {
+            role: 'function',
+            name: functionName,
+            content: result,
+            tool_call_id: toolCall.id, 
+          };
 
-      if (functionName === 'generate_assignment') {
-        result = generateAssignment(functionArgs.topic);
-      } else if (functionName === 'generate_learning_roadmap') {
-        console.log(functionArgs?.topic, functionArgs?.duration);
-        result = generateLearningRoadmap(functionArgs.topic, functionArgs.duration);
-      } else if (functionName === 'generate_quiz_questions') {
-        result = generateQuizQuestions(functionArgs.topic, functionArgs.numQuestions);
+          // Send the function response back to OpenAI for processing
+          const finalResponse = await openai.chat.completions.create({
+            model: 'gpt-3.5-turbo',
+            messages: [
+              { role: 'user', content: `I need a ${task} on ${topic}` },
+              responseMessage,
+              functionResponseMessage,
+            ],
+          });
+
+          res.json({ answer: finalResponse.choices[0].message });
+          return;  
+        }
+      } catch (error: any) {
+        console.error('Error in /api/tutor:', error);
+        res.status(500).json({ error: 'Something went wrong.' });
+        return; 
       }
-
-      // Format the function response
-      const functionResponseMessage: ChatCompletionMessageParam = {
-        role: 'function',
-        name: functionName,
-        content: result,
-      };
-
-      // Send the function response back to OpenAI for processing
-      const finalResponse = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [...[{ role: 'user' as const, content: `I need a ${task} on ${topic}` }], responseMessage, functionResponseMessage],
-      });
-
-      res.json({ answer: finalResponse.choices[0].message });
-      return;
     } else {
       res.json({ answer: responseMessage });
       return;
