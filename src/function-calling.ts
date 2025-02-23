@@ -150,10 +150,14 @@ app.post(
             parameters: {
               type: 'object',
               properties: {
-                topic: { type: 'string', description: 'The difficulty level of the problem (easy, medium, hard).' },
+                difficulty: { 
+                  type: 'string', 
+                  description: 'The difficulty level of the problem (easy, medium, hard).',
+                  enum: ['easy', 'medium', 'hard'], 
+                },
               },
               required: ['difficulty'],
-            },
+            } as any,
           },
         },
         {
@@ -205,6 +209,8 @@ app.post(
         for (const toolCall of responseMessage.tool_calls) {
           const functionName = toolCall.function.name;
           const functionArgs = JSON.parse(toolCall.function.arguments);
+          console.log("Function name:", toolCall.function.name);
+          console.log("Function arguments:", toolCall.function.arguments);
   
           if (functionName === 'generate_algebra_problem') {
             result = generateAlgebraProblem(functionArgs.difficulty);
